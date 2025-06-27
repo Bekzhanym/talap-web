@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getAnalytics } from 'firebase/analytics';
+import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration from environment variables
 const firebaseConfig = {
@@ -19,10 +20,13 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);
 
+// Firestore
+export const db = getFirestore(app);
+
 // Optional: Initialize Analytics if measurementId is provided and in browser
-let analytics;
-if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
-  analytics = getAnalytics(app);
-}
+// let analytics;
+// if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
+//   analytics = getAnalytics(app);
+// }
 
 export default app; 

@@ -5,9 +5,14 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
   sendEmailVerification as firebaseSendEmailVerification,
+  updateProfile,
+  sendPasswordResetEmail as firebaseSendPasswordResetEmail,
+  signInWithPopup,
+  GoogleAuthProvider,
   type User as FirebaseUser
 } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import type { AuthContextType, User } from '../types/auth';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -52,9 +57,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Sign up function
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, firstName?: string, lastName?: string, phone?: string) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      // Обновляем displayName
+      if (firstName || lastName) {
+        await updateProfile(userCredential.user, {
+          displayName: `${firstName || ''} ${lastName || ''}`.trim(),
+        });
+      }
+      // Сохраняем в Firestore
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        email: userCredential.user.email,
+        firstName: firstName || '',
+        lastName: lastName || '',
+        phone: phone || '',
+        createdAt: new Date().toISOString(),
+        emailVerified: userCredential.user.emailVerified,
+      });
       await firebaseSendEmailVerification(userCredential.user);
       await saveToken(userCredential.user);
     } catch (error) {
@@ -98,6 +118,56 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // Reload user from Firebase
+  const reloadUser = async () => {
+    if (auth.currentUser) {
+      await auth.currentUser.reload();
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser) {
+        setUser(convertFirebaseUser(firebaseUser));
+        await saveToken(firebaseUser);
+      }
+    }
+  };
+
+  // Reset password
+  const resetPassword = async (email: string) => {
+    try {
+      await firebaseSendPasswordResetEmail(auth, email);
+    } catch (error) {
+      console.error('Error sending password reset email:', error);
+      throw error;
+    }
+  };
+
+  // Sign in with Google
+  const signInWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      // Проверяем, есть ли пользователь в Firestore
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+        // Новый пользователь — сохраняем в Firestore
+        await setDoc(userRef, {
+          email: user.email,
+          firstName: user.displayName ? user.displayName.split(' ')[0] : '',
+          lastName: user.displayName ? user.displayName.split(' ').slice(1).join(' ') : '',
+          phone: user.phoneNumber || '',
+          createdAt: new Date().toISOString(),
+          emailVerified: user.emailVerified,
+          provider: 'google',
+        });
+      }
+      await saveToken(user);
+    } catch (error) {
+      console.error('Error signing in with Google:', error);
+      throw error;
+    }
+  };
+
   // Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -122,6 +192,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signUp,
     signOut,
     sendEmailVerification,
+    reloadUser,
+    resetPassword,
+    signInWithGoogle,
   };
 
   return (
